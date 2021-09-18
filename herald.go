@@ -87,16 +87,11 @@ func (h *Herald) run() {
 				h.config.ClientAddedFunc(c)
 			}
 
-		// Message to send to all connected clients; clients whose write
-		// channels are blocked get closed
+		// Message to send to all connected clients
 		case chosen == messageIdx:
 			m := recv.Interface().(*Message)
 			for _, c := range clients {
-				select {
-				case c.writeChan <- m:
-				default:
-					c.conn.Close()
-				}
+				c.Send(m)
 			}
 
 		// Start shutting all of the clients down and return when complete
