@@ -135,7 +135,7 @@ func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request) error {
 	client := &Client{
 		conn:      c,
 		readChan:  make(chan *Message),
-		writeChan: make(chan *Message, 2),
+		writeChan: make(chan *Message, 10),
 	}
 	go client.readLoop()
 	go client.writeLoop()
