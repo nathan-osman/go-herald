@@ -7,16 +7,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Receiver describes a type that receives messages from a WebSocket.
-type Receiver interface {
-	Receive(m *Message)
-}
-
 // Herald maintains a set of WebSocket connections and facilitates the exchange
 // of messages between them.
 type Herald struct {
 	upgrader      *websocket.Upgrader
-	receiver      Receiver
+	config        *Config
 	addClientChan chan *Client
 	messageChan   chan *Message
 	closeChan     chan bool
@@ -71,7 +66,7 @@ func (h *Herald) run() {
 		case chosen < len(cases):
 			if recvOK {
 				m := recv.Interface().(*Message)
-				h.receiver.Receive(m)
+				h.config.ReceiverFunc(m)
 			} else {
 				c := clients[chosen]
 				close(c.writeChan)
@@ -112,14 +107,20 @@ func (h *Herald) run() {
 	}
 }
 
-// New creates a new Herald instance
-func New() *Herald {
+// New creates a new Herald instance with the specified receiver.
+func New(config *Config) *Herald {
 	h := &Herald{
 		upgrader:      &websocket.Upgrader{},
+		config:        config,
 		addClientChan: make(chan *Client),
 		messageChan:   make(chan *Message),
 		closeChan:     make(chan bool),
 		closedChan:    make(chan bool),
+	}
+	if h.config.ReceiverFunc == nil {
+		h.config.ReceiverFunc = func(m *Message) {
+			h.Send(m)
+		}
 	}
 	go h.run()
 	return h
