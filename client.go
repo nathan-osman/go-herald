@@ -8,6 +8,7 @@ import (
 
 // Client maintains information about an active client.
 type Client struct {
+	Data      interface{}
 	conn      *websocket.Conn
 	readChan  chan *Message
 	writeChan chan *Message
