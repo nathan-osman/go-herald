@@ -71,6 +71,9 @@ func (h *Herald) run() {
 				c := clients[chosen]
 				close(c.writeChan)
 				clients = append(clients[:chosen], clients[chosen+1:]...)
+				if h.config.ClientRemovedFunc != nil {
+					h.config.ClientRemovedFunc(c)
+				}
 				if shuttingDown && len(clients) == 0 {
 					return
 				}
@@ -80,6 +83,9 @@ func (h *Herald) run() {
 		case chosen == addClientIdx:
 			c := recv.Interface().(*Client)
 			clients = append(clients, c)
+			if h.config.ClientAddedFunc != nil {
+				h.config.ClientAddedFunc(c)
+			}
 
 		// Message to send to all connected clients; clients whose write
 		// channels are blocked get closed
