@@ -128,12 +128,13 @@ func New(config *Config) *Herald {
 }
 
 // AddClient adds a new WebSocket client and begins exchanging messages.
-func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request) error {
+func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request, data interface{}) error {
 	c, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return err
 	}
 	client := &Client{
+		Data:      data,
 		conn:      c,
 		readChan:  make(chan *Message),
 		writeChan: make(chan *Message, 10),
