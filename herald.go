@@ -141,6 +141,7 @@ func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request, data interfac
 	}
 	go client.readLoop()
 	go client.writeLoop()
+	h.addClientChan <- client
 	return nil
 }
 
