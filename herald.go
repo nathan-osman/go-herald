@@ -63,7 +63,7 @@ func (h *Herald) run() {
 		switch {
 
 		// Message received from a client or client disconnected
-		case chosen < len(cases):
+		case chosen < len(clients):
 			if recvOK {
 				m := recv.Interface().(*Message)
 				h.config.ReceiverFunc(m)
