@@ -24,10 +24,20 @@ herald := herald.New(&herald.Config{})
 When a WebSocket connection is received, call the `AddClient` method:
 
 ```golang
-herald.AddClient(w, r, nil)
+func someHandler(w http.ResponseWriter, r *http.Request) {
+    herald.AddClient(w, r, nil)
+}
 ```
 
 The third parameter is an `interface{}` that can be used to associate custom data with that particular client.
+
+To send messages to the clients, prepare them with `NewMessage` function and use the `Herald`'s `Send` method:
+
+```golang
+msg, err := herald.NewMessage("test", "data")
+// TODO: handle err
+herald.Send(msg)
+```
 
 A JavaScript client for the above example might look something like the following:
 
@@ -36,7 +46,7 @@ let ws = new WebSocket("ws://server/ws");
 
 ws.send(
   JSON.stringify(
-    { type: "test" }
+    { type: "test", data: "data" }
   )
 );
 ```
