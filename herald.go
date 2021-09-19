@@ -72,7 +72,7 @@ func (h *Herald) run() {
 				close(c.writeChan)
 				clients = append(clients[:chosen], clients[chosen+1:]...)
 				if h.config.ClientRemovedFunc != nil {
-					h.config.ClientRemovedFunc(c)
+					h.config.ClientRemovedFunc(clients, c)
 				}
 				if shuttingDown && len(clients) == 0 {
 					return
@@ -82,10 +82,10 @@ func (h *Herald) run() {
 		// New client has connected
 		case chosen == addClientIdx:
 			c := recv.Interface().(*Client)
-			clients = append(clients, c)
 			if h.config.ClientAddedFunc != nil {
-				h.config.ClientAddedFunc(c)
+				h.config.ClientAddedFunc(clients, c)
 			}
+			clients = append(clients, c)
 
 		// Message to send to all connected clients
 		case chosen == messageIdx:

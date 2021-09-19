@@ -7,9 +7,11 @@ type Config struct {
 	// field is nil, the messages are simply rebroadcast to all clients.
 	ReceiverFunc func(m *Message)
 
-	// ClientAddedFunc is invoked when a new client connects.
-	ClientAddedFunc func(c *Client)
+	// ClientAddedFunc is invoked when a new client connects. The clients slice
+	// contains a list of all existing clients, not including c.
+	ClientAddedFunc func(clients []*Client, c *Client)
 
-	// ClientRemovedFunc is invoked when a client disconnects.
-	ClientRemovedFunc func(c *Client)
+	// ClientRemovedFunc is invoked when a client disconnects. The clients
+	// slice contains a list of all other clients, not including c.
+	ClientRemovedFunc func(clients []*Client, c *Client)
 }
