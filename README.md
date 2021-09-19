@@ -30,9 +30,9 @@ func someHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-The third parameter is an `interface{}` that can be used to associate custom data with that particular client.
+The third parameter to `AddClient` is an `interface{}` that can be used to associate custom data with that particular client.
 
-To send messages to the clients, prepare them with `NewMessage` function and use the `Herald`'s `Send` method:
+To send messages to the clients, prepare them with the `NewMessage` function and use the `Herald`'s `Send` method:
 
 ```golang
 msg, err := herald.NewMessage("test", "data")
