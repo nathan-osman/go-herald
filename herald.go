@@ -69,7 +69,7 @@ func (h *Herald) run() {
 				h.config.ReceiverFunc(m)
 			} else {
 				c := h.clients[chosen]
-				close(c.writeChan)
+				c.Close()
 				func() {
 					h.mutex.Lock()
 					defer h.mutex.Unlock()

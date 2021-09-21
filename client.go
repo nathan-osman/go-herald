@@ -51,3 +51,8 @@ func (c *Client) Send(m *Message) {
 		c.conn.Close()
 	}
 }
+
+// Close shuts down the client and disconnects.
+func (c *Client) Close() {
+	close(c.writeChan)
+}
