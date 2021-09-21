@@ -3,6 +3,7 @@ package herald
 import (
 	"net/http"
 	"reflect"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -10,8 +11,10 @@ import (
 // Herald maintains a set of WebSocket connections and facilitates the exchange
 // of messages between them.
 type Herald struct {
+	mutex         sync.RWMutex
 	upgrader      *websocket.Upgrader
 	config        *Config
+	clients       []*Client
 	addClientChan chan *Client
 	messageChan   chan *Message
 	closeChan     chan bool
@@ -20,10 +23,7 @@ type Herald struct {
 
 func (h *Herald) run() {
 	defer close(h.closedChan)
-	var (
-		clients      []*Client
-		shuttingDown bool
-	)
+	shuttingDown := false
 	for {
 
 		// The list of select cases needs to assembled at runtime so that the
@@ -31,7 +31,7 @@ func (h *Herald) run() {
 		// the loop
 
 		var cases []reflect.SelectCase
-		for _, c := range clients {
+		for _, c := range h.clients {
 			cases = append(cases, reflect.SelectCase{
 				Dir:  reflect.SelectRecv,
 				Chan: reflect.ValueOf(c.readChan),
@@ -63,18 +63,22 @@ func (h *Herald) run() {
 		switch {
 
 		// Message received from a client or client disconnected
-		case chosen < len(clients):
+		case chosen < len(h.clients):
 			if recvOK {
 				m := recv.Interface().(*Message)
 				h.config.ReceiverFunc(m)
 			} else {
-				c := clients[chosen]
+				c := h.clients[chosen]
 				close(c.writeChan)
-				clients = append(clients[:chosen], clients[chosen+1:]...)
+				func() {
+					h.mutex.Lock()
+					defer h.mutex.Unlock()
+					h.clients = append(h.clients[:chosen], h.clients[chosen+1:]...)
+				}()
 				if h.config.ClientRemovedFunc != nil {
-					h.config.ClientRemovedFunc(clients, c)
+					h.config.ClientRemovedFunc(h.clients, c)
 				}
-				if shuttingDown && len(clients) == 0 {
+				if shuttingDown && len(h.clients) == 0 {
 					return
 				}
 			}
@@ -83,21 +87,25 @@ func (h *Herald) run() {
 		case chosen == addClientIdx:
 			c := recv.Interface().(*Client)
 			if h.config.ClientAddedFunc != nil {
-				h.config.ClientAddedFunc(clients, c)
+				h.config.ClientAddedFunc(h.clients, c)
 			}
-			clients = append(clients, c)
+			func() {
+				h.mutex.Lock()
+				defer h.mutex.Unlock()
+				h.clients = append(h.clients, c)
+			}()
 
 		// Message to send to all connected clients
 		case chosen == messageIdx:
 			m := recv.Interface().(*Message)
-			for _, c := range clients {
+			for _, c := range h.clients {
 				c.Send(m)
 			}
 
 		// Start shutting all of the clients down and return when complete
 		case chosen == closeIdx:
-			if len(clients) > 0 {
-				for _, c := range clients {
+			if len(h.clients) > 0 {
+				for _, c := range h.clients {
 					c.conn.Close()
 				}
 				shuttingDown = true
