@@ -172,6 +172,13 @@ func (h *Herald) Send(m *Message) {
 	h.messageChan <- m
 }
 
+// Clients returns a slice of all currently connected clients.
+func (h *Herald) Clients() []*Client {
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+	return h.clients
+}
+
 // Close disconnects all clients and stops exchanging messages.
 func (h *Herald) Close() {
 	h.closeChan <- true

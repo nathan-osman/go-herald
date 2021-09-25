@@ -79,6 +79,11 @@ func TestHerald(t *testing.T) {
 	// Wait for the client connection
 	<-clientAddedChan
 
+	// Confirm the client is in the list
+	if len(h.Clients()) != 1 {
+		t.Fatal("Clients() should return 1")
+	}
+
 	// Have the client send a message
 	b, err := json.Marshal(message)
 	if err != nil {
