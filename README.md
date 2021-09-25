@@ -16,10 +16,11 @@ Begin by importing the package with:
 import "github.com/nathan-osman/go-herald"
 ```
 
-Next, create an instance of the `Herald` class with:
+Next, create an instance of the `Herald` class and start it with:
 
 ```golang
-herald := herald.New(&herald.Config{})
+herald := herald.New()
+herald.Start()
 ```
 
 When a WebSocket connection is received, call the `AddClient` method:
@@ -32,7 +33,7 @@ func someHandler(w http.ResponseWriter, r *http.Request) {
 
 The third parameter to `AddClient` is an `interface{}` that can be used to associate custom data with that particular client.
 
-To send messages to the clients, prepare them with the `NewMessage` function and use the `Herald`'s `Send` method:
+To send messages to the clients, prepare them with the `NewMessage` function and pass them to the `Herald`'s `Send` method:
 
 ```golang
 msg, err := herald.NewMessage("test", "data")
@@ -53,3 +54,9 @@ ws.send(
 ```
 
 By default, messages received by the `Herald` are simply rebroadcast to all other connected clients.
+
+To shutdown the `Herald`, use the `Close()` method. It will block until all of the connected clients have been disconnected.
+
+```golang
+herald.Close()
+```
