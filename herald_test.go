@@ -24,48 +24,46 @@ func TestHerald(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create the config
 	var (
 		receivedChan      = make(chan bool)
 		clientAddedChan   = make(chan bool)
 		clientRemovedChan = make(chan bool)
 
-		config = &Config{
-			ReceiverFunc: func(m *Message) {
-				if !reflect.DeepEqual(message, m) {
-					t.Fatal("message does not match")
-				}
-				close(receivedChan)
-			},
-			ClientAddedFunc: func(clients []*Client, c *Client) {
-				if len(clients) != 0 {
-					t.Fatal("len(clients) should be 0")
-				}
-				if !reflect.DeepEqual(c.Data, clientData) {
-					t.Fatal("client data does not match")
-				}
-				close(clientAddedChan)
-			},
-			ClientRemovedFunc: func(clients []*Client, c *Client) {
-				if len(clients) != 0 {
-					t.Fatal("len(clients) should be 0")
-				}
-				if !reflect.DeepEqual(c.Data, clientData) {
-					t.Fatal("client data does not match")
-				}
-				close(clientRemovedChan)
-			},
-		}
+		h = New()
 	)
 
-	// Create the Herald and server, upgrading connections as they come in
-	var (
-		h = New(config)
-		s = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h.AddClient(w, r, clientData)
-		}))
-	)
+	// Confirm that the correct message is received
+	h.MessageHandler = func(m *Message) {
+		if !reflect.DeepEqual(message, m) {
+			t.Fatal("message does not match")
+		}
+		close(receivedChan)
+	}
+
+	// Confirm that the correct client data is present
+	h.ClientAddedHandler = func(c *Client) {
+		if !reflect.DeepEqual(c.Data, clientData) {
+			t.Fatal("client data does not match")
+		}
+		close(clientAddedChan)
+	}
+
+	// Confirm that the correct client data is present
+	h.ClientRemovedHandler = func(c *Client) {
+		if !reflect.DeepEqual(c.Data, clientData) {
+			t.Fatal("client data does not match")
+		}
+		close(clientRemovedChan)
+	}
+
+	// Start the herald
+	h.Start()
 	defer h.Close()
+
+	// Create the server, upgrading connections as they come in
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.AddClient(w, r, clientData)
+	}))
 	defer s.Close()
 
 	// Change the protocol to ws

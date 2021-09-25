@@ -11,9 +11,21 @@ import (
 // Herald maintains a set of WebSocket connections and facilitates the exchange
 // of messages between them.
 type Herald struct {
+
+	// MessageHandler processes messages as they are coming in. If nil,
+	// messages will simply be re-broadcast to all clients.
+	MessageHandler func(m *Message)
+
+	// ClientAddedHandler processes new clients after they connect. This field
+	// is optional.
+	ClientAddedHandler func(c *Client)
+
+	// ClientRemovedHandler processes clients after they disconnect. This field
+	// is optional.
+	ClientRemovedHandler func(c *Client)
+
 	mutex         sync.RWMutex
 	upgrader      *websocket.Upgrader
-	config        *Config
 	clients       []*Client
 	addClientChan chan *Client
 	messageChan   chan *Message
@@ -66,7 +78,7 @@ func (h *Herald) run() {
 		case chosen < len(h.clients):
 			if recvOK {
 				m := recv.Interface().(*Message)
-				h.config.ReceiverFunc(m)
+				h.MessageHandler(m)
 			} else {
 				c := h.clients[chosen]
 				c.Close()
@@ -75,8 +87,8 @@ func (h *Herald) run() {
 					defer h.mutex.Unlock()
 					h.clients = append(h.clients[:chosen], h.clients[chosen+1:]...)
 				}()
-				if h.config.ClientRemovedFunc != nil {
-					h.config.ClientRemovedFunc(h.clients, c)
+				if h.ClientRemovedHandler != nil {
+					h.ClientRemovedHandler(c)
 				}
 				if shuttingDown && len(h.clients) == 0 {
 					return
@@ -86,8 +98,8 @@ func (h *Herald) run() {
 		// New client has connected
 		case chosen == addClientIdx:
 			c := recv.Interface().(*Client)
-			if h.config.ClientAddedFunc != nil {
-				h.config.ClientAddedFunc(h.clients, c)
+			if h.ClientAddedHandler != nil {
+				h.ClientAddedHandler(c)
 			}
 			func() {
 				h.mutex.Lock()
@@ -116,23 +128,25 @@ func (h *Herald) run() {
 	}
 }
 
-// New creates a new Herald instance with the specified receiver.
-func New(config *Config) *Herald {
+// New creates and begins initializing a new Herald instance. The Herald is not
+// started until the Start() method is invoked.
+func New() *Herald {
 	h := &Herald{
 		upgrader:      &websocket.Upgrader{},
-		config:        config,
 		addClientChan: make(chan *Client),
 		messageChan:   make(chan *Message),
 		closeChan:     make(chan bool),
 		closedChan:    make(chan bool),
 	}
-	if h.config.ReceiverFunc == nil {
-		h.config.ReceiverFunc = func(m *Message) {
-			h.Send(m)
-		}
+	h.MessageHandler = func(m *Message) {
+		h.Send(m)
 	}
-	go h.run()
 	return h
+}
+
+// Start completes initialization and begins processing messages.
+func (h *Herald) Start() {
+	go h.run()
 }
 
 // AddClient adds a new WebSocket client and begins exchanging messages.
