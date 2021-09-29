@@ -42,16 +42,6 @@ func (c *Client) writeLoop() {
 	}
 }
 
-// Send sends the specified message to the client. If the write channel for the
-// client is full, it is disconnected.
-func (c *Client) Send(m *Message) {
-	select {
-	case c.writeChan <- m:
-	default:
-		c.conn.Close()
-	}
-}
-
 // Close shuts down the client and disconnects.
 func (c *Client) Close() {
 	close(c.writeChan)

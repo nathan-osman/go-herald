@@ -34,8 +34,10 @@ func TestHerald(t *testing.T) {
 
 	// Confirm that the correct message is received
 	h.MessageHandler = func(m *Message) {
-		if !reflect.DeepEqual(message, m) {
-			t.Fatal("message does not match")
+		if !reflect.DeepEqual(message.Type, m.Type) ||
+			!reflect.DeepEqual(message.Data, m.Data) {
+			t.Log("message does not match")
+			t.Fail()
 		}
 		close(receivedChan)
 	}
@@ -43,7 +45,8 @@ func TestHerald(t *testing.T) {
 	// Confirm that the correct client data is present
 	h.ClientAddedHandler = func(c *Client) {
 		if !reflect.DeepEqual(c.Data, clientData) {
-			t.Fatal("client data does not match")
+			t.Log("client data does not match")
+			t.Fail()
 		}
 		close(clientAddedChan)
 	}
@@ -51,7 +54,8 @@ func TestHerald(t *testing.T) {
 	// Confirm that the correct client data is present
 	h.ClientRemovedHandler = func(c *Client) {
 		if !reflect.DeepEqual(c.Data, clientData) {
-			t.Fatal("client data does not match")
+			t.Log("client data does not match")
+			t.Fail()
 		}
 		close(clientRemovedChan)
 	}

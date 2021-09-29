@@ -78,6 +78,7 @@ func (h *Herald) run() {
 		case chosen < len(h.clients):
 			if recvOK {
 				m := recv.Interface().(*Message)
+				m.Client = h.clients[chosen]
 				h.MessageHandler(m)
 			} else {
 				c := h.clients[chosen]
@@ -107,11 +108,17 @@ func (h *Herald) run() {
 				h.clients = append(h.clients, c)
 			}()
 
-		// Message to send to all connected clients
+		// Message to send
 		case chosen == messageIdx:
 			m := recv.Interface().(*Message)
 			for _, c := range h.clients {
-				c.Send(m)
+				if m.Client == nil || m.Client == c {
+					select {
+					case c.writeChan <- m:
+					default:
+						c.conn.Close()
+					}
+				}
 			}
 
 		// Start shutting all of the clients down and return when complete
@@ -167,7 +174,8 @@ func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request, data interfac
 	return nil
 }
 
-// Send sends the specified message to all clients
+// Send sends the specified message to the client specified in the message or
+// all clients if nil.
 func (h *Herald) Send(m *Message) {
 	h.messageChan <- m
 }
