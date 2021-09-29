@@ -42,7 +42,7 @@ func (c *Client) writeLoop() {
 	}
 }
 
-// Close shuts down the client and disconnects.
+// Close disconnects the client.
 func (c *Client) Close() {
-	close(c.writeChan)
+	c.conn.Close()
 }

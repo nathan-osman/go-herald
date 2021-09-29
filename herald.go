@@ -82,7 +82,7 @@ func (h *Herald) run() {
 				h.MessageHandler(m)
 			} else {
 				c := h.clients[chosen]
-				c.Close()
+				close(c.writeChan)
 				func() {
 					h.mutex.Lock()
 					defer h.mutex.Unlock()
