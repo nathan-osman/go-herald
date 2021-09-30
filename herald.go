@@ -8,29 +8,34 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type sendParams struct {
+	message *Message
+	clients []*Client
+}
+
 // Herald maintains a set of WebSocket connections and facilitates the exchange
 // of messages between them.
 type Herald struct {
 
 	// MessageHandler processes messages as they are coming in. If nil,
 	// messages will simply be re-broadcast to all clients.
-	MessageHandler func(m *Message)
+	MessageHandler func(message *Message, client *Client)
 
 	// ClientAddedHandler processes new clients after they connect. This field
 	// is optional.
-	ClientAddedHandler func(c *Client)
+	ClientAddedHandler func(client *Client)
 
 	// ClientRemovedHandler processes clients after they disconnect. This field
 	// is optional.
-	ClientRemovedHandler func(c *Client)
+	ClientRemovedHandler func(client *Client)
 
-	mutex         sync.RWMutex
-	upgrader      *websocket.Upgrader
-	clients       []*Client
-	addClientChan chan *Client
-	messageChan   chan *Message
-	closeChan     chan bool
-	closedChan    chan bool
+	mutex          sync.RWMutex
+	upgrader       *websocket.Upgrader
+	clients        []*Client
+	addClientChan  chan *Client
+	sendParamsChan chan *sendParams
+	closeChan      chan bool
+	closedChan     chan bool
 }
 
 func (h *Herald) run() {
@@ -60,9 +65,9 @@ func (h *Herald) run() {
 				})
 				return
 			}
-			addClientIdx = addCase(reflect.ValueOf(h.addClientChan))
-			messageIdx   = addCase(reflect.ValueOf(h.messageChan))
-			closeIdx     = -1
+			addClientIdx  = addCase(reflect.ValueOf(h.addClientChan))
+			sendParamsIdx = addCase(reflect.ValueOf(h.sendParamsChan))
+			closeIdx      = -1
 		)
 
 		// Add the channel for closing if not shutting down
@@ -77,9 +82,11 @@ func (h *Herald) run() {
 		// Message received from a client or client disconnected
 		case chosen < len(h.clients):
 			if recvOK {
-				m := recv.Interface().(*Message)
-				m.Client = h.clients[chosen]
-				h.MessageHandler(m)
+				var (
+					m = recv.Interface().(*Message)
+					c = h.clients[chosen]
+				)
+				h.MessageHandler(m, c)
 			} else {
 				c := h.clients[chosen]
 				close(c.writeChan)
@@ -109,15 +116,16 @@ func (h *Herald) run() {
 			}()
 
 		// Message to send
-		case chosen == messageIdx:
-			m := recv.Interface().(*Message)
-			for _, c := range h.clients {
-				if m.Client == nil || m.Client == c {
-					select {
-					case c.writeChan <- m:
-					default:
-						c.conn.Close()
-					}
+		case chosen == sendParamsIdx:
+			p := recv.Interface().(*sendParams)
+			if p.clients == nil {
+				p.clients = h.clients
+			}
+			for _, c := range p.clients {
+				select {
+				case c.writeChan <- p.message:
+				default:
+					c.conn.Close()
 				}
 			}
 
@@ -139,14 +147,14 @@ func (h *Herald) run() {
 // started until the Start() method is invoked.
 func New() *Herald {
 	h := &Herald{
-		upgrader:      &websocket.Upgrader{},
-		addClientChan: make(chan *Client),
-		messageChan:   make(chan *Message),
-		closeChan:     make(chan bool),
-		closedChan:    make(chan bool),
+		upgrader:       &websocket.Upgrader{},
+		addClientChan:  make(chan *Client),
+		sendParamsChan: make(chan *sendParams),
+		closeChan:      make(chan bool),
+		closedChan:     make(chan bool),
 	}
-	h.MessageHandler = func(m *Message) {
-		h.Send(m)
+	h.MessageHandler = func(m *Message, c *Client) {
+		h.Send(m, nil)
 	}
 	return h
 }
@@ -176,8 +184,11 @@ func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request, data interfac
 
 // Send sends the specified message to the client specified in the message or
 // all clients if nil.
-func (h *Herald) Send(m *Message) {
-	h.messageChan <- m
+func (h *Herald) Send(message *Message, clients []*Client) {
+	h.sendParamsChan <- &sendParams{
+		message: message,
+		clients: clients,
+	}
 }
 
 // Clients returns a slice of all currently connected clients.

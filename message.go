@@ -8,9 +8,8 @@ import (
 // field is a pointer to either the client who sent the message or the one that
 // should receive it.
 type Message struct {
-	Client *Client         `json:"-"`
-	Type   string          `json:"type"`
-	Data   json.RawMessage `json:"data"`
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data"`
 }
 
 // NewMessage creates a new Message instance of the specified type with the

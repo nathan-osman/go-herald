@@ -33,7 +33,7 @@ func TestHerald(t *testing.T) {
 	)
 
 	// Confirm that the correct message is received
-	h.MessageHandler = func(m *Message) {
+	h.MessageHandler = func(m *Message, c *Client) {
 		if !reflect.DeepEqual(message.Type, m.Type) ||
 			!reflect.DeepEqual(message.Data, m.Data) {
 			t.Log("message does not match")
