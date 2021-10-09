@@ -165,10 +165,10 @@ func (h *Herald) Start() {
 }
 
 // AddClient adds a new WebSocket client and begins exchanging messages.
-func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request, data interface{}) error {
+func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request, data interface{}) (*Client, error) {
 	c, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	client := &Client{
 		Data:      data,
@@ -179,7 +179,7 @@ func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request, data interfac
 	go client.readLoop()
 	go client.writeLoop()
 	h.addClientChan <- client
-	return nil
+	return client, nil
 }
 
 // Send sends the specified message to the client specified in the message or
