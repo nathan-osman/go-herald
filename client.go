@@ -8,13 +8,19 @@ import (
 
 // Client maintains information about an active client.
 type Client struct {
-	Data      interface{}
-	conn      *websocket.Conn
-	readChan  chan *Message
-	writeChan chan *Message
+	Data            interface{}
+	conn            *websocket.Conn
+	readChan        chan *Message
+	writeChan       chan *Message
+	writeClosedChan chan struct{}
+	closedChan      chan struct{}
 }
 
 func (c *Client) readLoop() {
+	defer close(c.closedChan)
+	defer func() {
+		<-c.writeClosedChan
+	}()
 	defer close(c.readChan)
 	for {
 		messageType, p, err := c.conn.ReadMessage()
@@ -33,6 +39,7 @@ func (c *Client) readLoop() {
 }
 
 func (c *Client) writeLoop() {
+	defer close(c.writeClosedChan)
 	for m := range c.writeChan {
 		b, err := json.Marshal(m)
 		if err != nil {
@@ -42,7 +49,13 @@ func (c *Client) writeLoop() {
 	}
 }
 
-// Close disconnects the client.
+// Close disconnects the client. To ensure the client has completely shut down,
+// use the Wait() method.
 func (c *Client) Close() {
 	c.conn.Close()
+}
+
+// Wait waits for the client goroutines to shut down.
+func (c *Client) Wait() {
+	<-c.closedChan
 }

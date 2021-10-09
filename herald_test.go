@@ -65,8 +65,14 @@ func TestHerald(t *testing.T) {
 	defer h.Close()
 
 	// Create the server, upgrading connections as they come in
+	var client *Client
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		h.AddClient(w, r, clientData)
+		c, err := h.AddClient(w, r, clientData)
+		if err != nil {
+			t.Log(err)
+			t.Fail()
+		}
+		client = c
 	}))
 	defer s.Close()
 
@@ -105,4 +111,7 @@ func TestHerald(t *testing.T) {
 
 	// Wait for client disconnect
 	<-clientRemovedChan
+
+	// Wait for the client to fully shutdown
+	client.Wait()
 }

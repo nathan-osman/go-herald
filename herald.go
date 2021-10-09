@@ -44,19 +44,29 @@ func (h *Herald) run() {
 	for {
 
 		// The list of select cases needs to assembled at runtime so that the
-		// read channels from the currently active clients can be included in
-		// the loop
+		// read and closed channels from the clients can be included
 
 		var cases []reflect.SelectCase
 		for _, c := range h.clients {
-			cases = append(cases, reflect.SelectCase{
-				Dir:  reflect.SelectRecv,
-				Chan: reflect.ValueOf(c.readChan),
-			})
+			cases = append(
+				cases,
+				reflect.SelectCase{
+					Dir:  reflect.SelectRecv,
+					Chan: reflect.ValueOf(c.readChan),
+				},
+				reflect.SelectCase{
+					Dir:  reflect.SelectRecv,
+					Chan: reflect.ValueOf(c.closedChan),
+				},
+			)
 		}
 
-		// Add the channel for adding new clients
 		var (
+
+			// Remember the number of cases for the client channels
+			numClientCases = len(cases)
+
+			// Utility function for adding a new case and receiving its index
 			addCase = func(v reflect.Value) (i int) {
 				i = len(cases)
 				cases = append(cases, reflect.SelectCase{
@@ -65,12 +75,14 @@ func (h *Herald) run() {
 				})
 				return
 			}
+
+			// Add cases for the addClient and sendParams channel
 			addClientIdx  = addCase(reflect.ValueOf(h.addClientChan))
 			sendParamsIdx = addCase(reflect.ValueOf(h.sendParamsChan))
 			closeIdx      = -1
 		)
 
-		// Add the channel for closing if not shutting down
+		// Add a case for the close channel if not shutting down
 		if !shuttingDown {
 			closeIdx = addCase(reflect.ValueOf(h.closeChan))
 		}
@@ -80,20 +92,39 @@ func (h *Herald) run() {
 		switch {
 
 		// Message received from a client or client disconnected
-		case chosen < len(h.clients):
-			if recvOK {
-				var (
-					m = recv.Interface().(*Message)
-					c = h.clients[chosen]
-				)
-				h.MessageHandler(m, c)
+		case chosen < numClientCases:
+			var (
+				clientIdx = chosen / 2
+				c         = h.clients[clientIdx]
+			)
+
+			// If the index is divisible by 2, it is the read channel;
+			// otherwise it is the closed channel
+			if chosen%2 == 0 {
+				if recvOK {
+
+					// A value was received; handle it
+					m := recv.Interface().(*Message)
+					h.MessageHandler(m, c)
+				} else {
+
+					// If the read channel is closed, nothing more can be read;
+					// set the channel to nil to prevent short-circuiting the
+					// select{} statement; close the write channel and set it
+					// to nil since writing to the socket is impossible
+					close(c.writeChan)
+					c.readChan = nil
+					c.writeChan = nil
+				}
 			} else {
-				c := h.clients[chosen]
-				close(c.writeChan)
+
+				// Remove the client from the list since it has completely shut
+				// down by this point; if the loop is being shut down and this
+				// was the last client, terminate the loop
 				func() {
 					h.mutex.Lock()
 					defer h.mutex.Unlock()
-					h.clients = append(h.clients[:chosen], h.clients[chosen+1:]...)
+					h.clients = append(h.clients[:clientIdx], h.clients[clientIdx+1:]...)
 				}()
 				if h.ClientRemovedHandler != nil {
 					h.ClientRemovedHandler(c)
@@ -122,10 +153,12 @@ func (h *Herald) run() {
 				p.clients = h.clients
 			}
 			for _, c := range p.clients {
-				select {
-				case c.writeChan <- p.message:
-				default:
-					c.conn.Close()
+				if c.writeChan != nil {
+					select {
+					case c.writeChan <- p.message:
+					default:
+						c.conn.Close()
+					}
 				}
 			}
 
@@ -171,10 +204,12 @@ func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request, data interfac
 		return nil, err
 	}
 	client := &Client{
-		Data:      data,
-		conn:      c,
-		readChan:  make(chan *Message),
-		writeChan: make(chan *Message, 10),
+		Data:            data,
+		conn:            c,
+		readChan:        make(chan *Message),
+		writeChan:       make(chan *Message, 10),
+		writeClosedChan: make(chan struct{}),
+		closedChan:      make(chan struct{}),
 	}
 	go client.readLoop()
 	go client.writeLoop()
