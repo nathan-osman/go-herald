@@ -34,8 +34,8 @@ type Herald struct {
 	clients        []*Client
 	addClientChan  chan *Client
 	sendParamsChan chan *sendParams
-	closeChan      chan bool
-	closedChan     chan bool
+	closeChan      chan struct{}
+	closedChan     chan struct{}
 }
 
 func (h *Herald) run() {
@@ -150,8 +150,8 @@ func New() *Herald {
 		upgrader:       &websocket.Upgrader{},
 		addClientChan:  make(chan *Client),
 		sendParamsChan: make(chan *sendParams),
-		closeChan:      make(chan bool),
-		closedChan:     make(chan bool),
+		closeChan:      make(chan struct{}),
+		closedChan:     make(chan struct{}),
 	}
 	h.MessageHandler = func(m *Message, c *Client) {
 		h.Send(m, nil)
@@ -200,6 +200,6 @@ func (h *Herald) Clients() []*Client {
 
 // Close disconnects all clients and stops exchanging messages.
 func (h *Herald) Close() {
-	h.closeChan <- true
+	close(h.closeChan)
 	<-h.closedChan
 }
