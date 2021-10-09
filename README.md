@@ -38,8 +38,10 @@ To send messages to the clients, prepare them with the `NewMessage` function and
 ```golang
 msg, err := herald.NewMessage("test", "data")
 // TODO: handle err
-herald.Send(msg)
+herald.Send(msg, nil)
 ```
+
+The second parameter is a list of clients to send the message to. Passing `nil` means _send the message to all clients_.
 
 A JavaScript client for the above example might look something like the following:
 
