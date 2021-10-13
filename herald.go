@@ -105,7 +105,7 @@ func (h *Herald) run() {
 
 					// A value was received; handle it
 					m := recv.Interface().(*Message)
-					h.MessageHandler(m, c)
+					go h.MessageHandler(m, c)
 				} else {
 
 					// If the read channel is closed, nothing more can be read;
@@ -127,7 +127,7 @@ func (h *Herald) run() {
 					h.clients = append(h.clients[:clientIdx], h.clients[clientIdx+1:]...)
 				}()
 				if h.ClientRemovedHandler != nil {
-					h.ClientRemovedHandler(c)
+					go h.ClientRemovedHandler(c)
 				}
 				if shuttingDown && len(h.clients) == 0 {
 					return
@@ -138,7 +138,7 @@ func (h *Herald) run() {
 		case chosen == addClientIdx:
 			c := recv.Interface().(*Client)
 			if h.ClientAddedHandler != nil {
-				h.ClientAddedHandler(c)
+				go h.ClientAddedHandler(c)
 			}
 			func() {
 				h.mutex.Lock()
