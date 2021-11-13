@@ -2,116 +2,217 @@ package herald
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 const (
-	messageType = "test"
-	clientData  = "test"
+	receiveTimeout = 5 * time.Second
+
+	messageType1 = "test1"
+	messageType2 = "test2"
+
+	clientData = "test"
 )
 
-func TestHerald(t *testing.T) {
-
-	// Create a message for sending
-	message, err := NewMessage(messageType, nil)
+func newTestMessage(t *testing.T, messageType string) *Message {
+	m, err := NewMessage(messageType, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return m
+}
 
+type testServer struct {
+	herald          *Herald
+	receivedWG      *sync.WaitGroup
+	clientAddedWG   *sync.WaitGroup
+	clientRemovedWG *sync.WaitGroup
+}
+
+func newTestServer() *testServer {
+	s := &testServer{
+		herald:          New(),
+		receivedWG:      &sync.WaitGroup{},
+		clientAddedWG:   &sync.WaitGroup{},
+		clientRemovedWG: &sync.WaitGroup{},
+	}
+	s.herald.MessageHandler = func(m *Message, c *Client) {
+		s.receivedWG.Done()
+	}
+	s.herald.ClientAddedHandler = func(c *Client) {
+		s.clientAddedWG.Done()
+	}
+	s.herald.ClientRemovedHandler = func(c *Client) {
+		s.clientRemovedWG.Done()
+	}
+	s.herald.Start()
+	return s
+}
+
+type testClient struct {
+	client *Client
+	conn   *websocket.Conn
+}
+
+func newTestClient(t *testing.T, s *testServer) *testClient {
+	s.clientAddedWG.Add(1)
 	var (
-		receivedChan      = make(chan bool)
-		clientAddedChan   = make(chan bool)
-		clientRemovedChan = make(chan bool)
-
-		h = New()
+		c      = &testClient{}
+		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			client, err := s.herald.AddClient(w, r, clientData)
+			if err != nil {
+				t.Log(err)
+				t.Fail()
+				return
+			}
+			c.client = client
+		}))
+		addr         = strings.Replace(server.URL, "http", "ws", 1)
+		conn, _, err = websocket.DefaultDialer.Dial(addr, nil)
 	)
-
-	// Confirm that the correct message is received
-	h.MessageHandler = func(m *Message, c *Client) {
-		if !reflect.DeepEqual(message.Type, m.Type) ||
-			!reflect.DeepEqual(message.Data, m.Data) {
-			t.Log("message does not match")
-			t.Fail()
-		}
-		close(receivedChan)
+	if err != nil {
+		t.Fatal(err)
 	}
+	c.conn = conn
+	server.Close()
+	s.clientAddedWG.Wait()
+	return c
+}
 
-	// Confirm that the correct client data is present
-	h.ClientAddedHandler = func(c *Client) {
-		if !reflect.DeepEqual(c.Data, clientData) {
-			t.Log("client data does not match")
-			t.Fail()
-		}
-		close(clientAddedChan)
+func (c *testClient) send(t *testing.T, s *testServer, m *Message) {
+	s.receivedWG.Add(1)
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	// Confirm that the correct client data is present
-	h.ClientRemovedHandler = func(c *Client) {
-		if !reflect.DeepEqual(c.Data, clientData) {
-			t.Log("client data does not match")
-			t.Fail()
-		}
-		close(clientRemovedChan)
+	if err := c.conn.WriteMessage(websocket.TextMessage, b); err != nil {
+		t.Fatal(err)
 	}
+	s.receivedWG.Wait()
+}
 
-	// Start the herald
-	h.Start()
-	defer h.Close()
-
-	// Create the server, upgrading connections as they come in
-	var client *Client
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c, err := h.AddClient(w, r, clientData)
+func (c *testClient) receive(t *testing.T, s *testServer, m *Message) {
+	msgChan := make(chan []byte)
+	go func() {
+		defer close(msgChan)
+		_, p, err := c.conn.ReadMessage()
 		if err != nil {
 			t.Log(err)
 			t.Fail()
+			return
 		}
-		client = c
-	}))
-	defer s.Close()
-
-	// Change the protocol to ws
-	wsURL := strings.Replace(s.URL, "http", "ws", 1)
-
-	// Create the client connection
-	c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatal(err)
+		msgChan <- p
+	}()
+	select {
+	case p, ok := <-msgChan:
+		if !ok {
+			return
+		}
+		receivedMessage := &Message{}
+		if err := json.Unmarshal(p, receivedMessage); err != nil {
+			t.Fatal(err)
+		}
+		if receivedMessage.Type != m.Type {
+			t.Fatalf("%s != %s", receivedMessage.Type, m.Type)
+		}
+	case <-time.After(receiveTimeout):
+		t.Fatal("timeout reached")
 	}
-	defer c.Close()
+}
 
-	// Wait for the client connection
-	<-clientAddedChan
+func (c *testClient) close(s *testServer) {
+	s.clientRemovedWG.Add(1)
+	c.conn.Close()
+	s.clientRemovedWG.Wait()
+}
 
-	// Confirm the client is in the list
-	if len(h.Clients()) != 1 {
-		t.Fatal("Clients() should return 1")
+func TestHeraldConnect(t *testing.T) {
+
+	// Create the server
+	s := newTestServer()
+	defer s.herald.Close()
+
+	// Create a client, verify that it is connected, and close it
+	c := newTestClient(t, s)
+	if !reflect.DeepEqual(s.herald.Clients(), []*Client{c.client}) {
+		t.Fatal("client list does not match")
 	}
+	c.close(s)
+}
 
-	// Have the client send a message
-	b, err := json.Marshal(message)
-	if err != nil {
-		t.Fatal(err)
+func TestHeraldReceive(t *testing.T) {
+
+	// Create the server
+	s := newTestServer()
+	defer s.herald.Close()
+
+	// Create a client, send a message, and close it
+	c := newTestClient(t, s)
+	c.send(t, s, newTestMessage(t, messageType1))
+	c.close(s)
+}
+
+func TestHeraldSend(t *testing.T) {
+
+	// Create the server
+	s := newTestServer()
+	defer s.herald.Close()
+
+	// Create two clients and two unique messages
+	var (
+		c1 = newTestClient(t, s)
+		c2 = newTestClient(t, s)
+
+		m1 = newTestMessage(t, messageType1)
+		m2 = newTestMessage(t, messageType2)
+	)
+
+	// Send a separate message to each client
+	s.herald.Send(m1, []*Client{c1.client})
+	s.herald.Send(m2, []*Client{c2.client})
+
+	// Receive the messages
+	c1.receive(t, s, m1)
+	c2.receive(t, s, m2)
+
+	// Send a message to all clients
+	s.herald.Send(m1, nil)
+
+	// Receiv the messages
+	c1.receive(t, s, m1)
+	c2.receive(t, s, m1)
+
+	// Close the client
+	c1.close(s)
+	c2.close(s)
+}
+
+func TestHeraldClose(t *testing.T) {
+
+	// Create the server and a client
+	var (
+		s = newTestServer()
+		c = newTestClient(t, s)
+	)
+
+	// Disconnect the server
+	s.clientRemovedWG.Add(1)
+	s.herald.Close()
+
+	// Ensure all clients were disconnected
+	b := make([]byte, 32)
+	if _, err := c.conn.UnderlyingConn().Read(b); !errors.Is(err, io.EOF) {
+		fmt.Println(err)
 	}
-	if err := c.WriteMessage(websocket.TextMessage, b); err != nil {
-		t.Fatal(err)
-	}
-
-	// Wait for message
-	<-receivedChan
-
-	// Disconnect the client
-	c.Close()
-
-	// Wait for client disconnect
-	<-clientRemovedChan
-
-	// Wait for the client to fully shutdown
-	client.Wait()
 }
