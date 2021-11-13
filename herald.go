@@ -105,7 +105,7 @@ func (h *Herald) run() {
 
 					// A value was received; handle it
 					m := recv.Interface().(*Message)
-					go h.MessageHandler(m, c)
+					h.MessageHandler(m, c)
 				} else {
 
 					// If the read channel is closed, nothing more can be read;
@@ -127,7 +127,7 @@ func (h *Herald) run() {
 					h.clients = append(h.clients[:clientIdx], h.clients[clientIdx+1:]...)
 				}()
 				if h.ClientRemovedHandler != nil {
-					go h.ClientRemovedHandler(c)
+					h.ClientRemovedHandler(c)
 				}
 				if shuttingDown && len(h.clients) == 0 {
 					return
@@ -138,7 +138,7 @@ func (h *Herald) run() {
 		case chosen == addClientIdx:
 			c := recv.Interface().(*Client)
 			if h.ClientAddedHandler != nil {
-				go h.ClientAddedHandler(c)
+				h.ClientAddedHandler(c)
 			}
 			func() {
 				h.mutex.Lock()
@@ -218,12 +218,15 @@ func (h *Herald) AddClient(w http.ResponseWriter, r *http.Request, data interfac
 }
 
 // Send sends the specified message to the client specified in the message or
-// all clients if nil.
+// all clients if nil. The send operation takes place in a separate goroutine
+// to enable the call to be made from handlers without triggering a deadlock.
 func (h *Herald) Send(message *Message, clients []*Client) {
-	h.sendParamsChan <- &sendParams{
-		message: message,
-		clients: clients,
-	}
+	go func() {
+		h.sendParamsChan <- &sendParams{
+			message: message,
+			clients: clients,
+		}
+	}()
 }
 
 // Clients returns a slice of all currently connected clients.
