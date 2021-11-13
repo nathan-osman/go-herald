@@ -3,7 +3,6 @@ package herald
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -137,6 +136,13 @@ func (c *testClient) close(s *testServer) {
 	s.clientRemovedWG.Wait()
 }
 
+func (c *testClient) verifyDisconnected(t *testing.T) {
+	b := make([]byte, 32)
+	if _, err := c.conn.UnderlyingConn().Read(b); !errors.Is(err, io.EOF) {
+		t.Fatal("client was not disconnected")
+	}
+}
+
 func TestHeraldConnect(t *testing.T) {
 
 	// Create the server
@@ -210,9 +216,23 @@ func TestHeraldClose(t *testing.T) {
 	s.clientRemovedWG.Add(1)
 	s.herald.Close()
 
-	// Ensure all clients were disconnected
-	b := make([]byte, 32)
-	if _, err := c.conn.UnderlyingConn().Read(b); !errors.Is(err, io.EOF) {
-		fmt.Println(err)
-	}
+	// Ensure the client was disconnected
+	c.verifyDisconnected(t)
+}
+
+func TestClientClose(t *testing.T) {
+
+	// Create the server and a client
+	var (
+		s = newTestServer()
+		c = newTestClient(t, s)
+	)
+
+	// Close the client from the server's side and wait
+	s.clientRemovedWG.Add(1)
+	c.client.Close()
+	c.client.Wait()
+
+	// Ensure the client was disconnected
+	c.verifyDisconnected(t)
 }
