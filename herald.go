@@ -236,6 +236,12 @@ func (h *Herald) Clients() []*Client {
 	return h.clients
 }
 
+// SetCheckOrigin provides a function that will be invoked for every new
+// connection. If the function returns true, it will be allowed.
+func (h *Herald) SetCheckOrigin(fn func(*http.Request) bool) {
+	h.upgrader.CheckOrigin = fn
+}
+
 // Close disconnects all clients and stops exchanging messages.
 func (h *Herald) Close() {
 	close(h.closeChan)
