@@ -22,6 +22,7 @@ func (c *Client) readLoop() {
 		<-c.writeClosedChan
 	}()
 	defer close(c.readChan)
+	defer c.conn.Close()
 	for {
 		messageType, p, err := c.conn.ReadMessage()
 		if err != nil {
